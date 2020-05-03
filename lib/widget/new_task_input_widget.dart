@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:moor_flutter/moor_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:moor_database/data/moor_database.dart';
 
@@ -32,17 +33,17 @@ class _NewTaskInputState extends State<NewTaskInput> {
   }
 
   Expanded _buildTextField(BuildContext context) {
-    final database = Provider.of<AppDatabase>(context);
+    final dao = Provider.of<TaskDao>(context);
     return Expanded(
       child: TextField(
         controller: controller,
         decoration: InputDecoration(hintText: 'Task Name'),
         onSubmitted: (inputName) {
-          final task = Task(
-            name: inputName,
-            dueDate: newTaskDate,
+          final task = TasksCompanion(
+            name: Value(inputName),
+            dueDate: Value(newTaskDate),
           );
-          database.insertTask(task);
+          dao.insertTask(task);
           resetValuesAfterSubmit();
         },
       ),

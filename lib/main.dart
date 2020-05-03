@@ -12,7 +12,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return Provider(
       create: (context) {
-        return AppDatabase();
+        return AppDatabase().taskDao;
       },
       child: MaterialApp(
         title: 'Room Demo',
