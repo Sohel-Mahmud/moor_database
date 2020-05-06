@@ -8,6 +8,8 @@ part 'moor_database.g.dart';
 class Tasks extends Table {
   //autoIncrement makes it primary key autometically
   IntColumn get id => integer().autoIncrement()();
+  TextColumn get tagName =>
+      text().nullable().customConstraint('NULL REFERENCES tags(name)')();
   TextColumn get name => text().withLength(min: 1, max: 50)();
   DateTimeColumn get dueDate => dateTime().nullable()();
   BoolColumn get completed => boolean().withDefault(Constant(false))();
@@ -29,7 +31,22 @@ class Tasks extends Table {
 //   });
 // }
 
-@UseMoor(tables: [Tasks], daos: [TaskDao])
+class Tags extends Table {
+  TextColumn get name => text().withLength(min: 1, max: 10)();
+  IntColumn get colors => integer()();
+
+  @override
+  Set<Column> get primaryKey => {name};
+}
+
+class TaskWithTag {
+  final Task task;
+  final Tag tag;
+
+  TaskWithTag({@required this.task, @required this.tag});
+}
+
+@UseMoor(tables: [Tasks, Tags], daos: [TaskDao, TagDao])
 class AppDatabase extends _$AppDatabase {
   AppDatabase()
       // Specify the location of the database file
@@ -39,7 +56,18 @@ class AppDatabase extends _$AppDatabase {
   // Bump this when changing tables and columns.
   // Migrations will be covered in the next part.
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration =>
+      MigrationStrategy(onUpgrade: (migrator, from, to) async {
+        if (from == 1) {
+          await migrator.addColumn(tasks, tasks.tagName);
+          await migrator.createTable(tags);
+        }
+      }, beforeOpen: (details) async {
+        await customStatement('PRAGMA foreign_keys = ON');
+      });
 
   /// slect query
 
@@ -47,7 +75,7 @@ class AppDatabase extends _$AppDatabase {
 
 ///usng dao with typesafe custom sql which builds using build runner
 @UseDao(
-  tables: [Tasks],
+  tables: [Tasks, Tags],
   queries: {
     'completedTasksGenerated':
         'SELECT * FROM tasks WHERE completed = 1 ORDER BY due_date DESC, name;'
@@ -73,6 +101,31 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
         .watch();
   }
 
+  //joining two tables
+  Stream<List<TaskWithTag>> watchAllTaskWithTag() {
+    return (select(tasks)
+          ..orderBy(
+            [
+              (t) =>
+                  OrderingTerm(expression: t.dueDate, mode: OrderingMode.desc),
+              (t) => OrderingTerm(expression: t.name, mode: OrderingMode.asc),
+            ],
+          ))
+        .join(
+          [
+            leftOuterJoin(tags, tags.name.equalsExp(tasks.tagName)),
+          ],
+        )
+        .watch()
+        .map((rows) => rows.map(
+              (row) {
+                return TaskWithTag(
+                  task: row.readTable(tasks),
+                  tag: row.readTable(tags),
+                );
+              },
+            ).toList());
+  }
   ///customquery changed in update, previous one depricated
   ///non type safe, new update is type safe, done on @UseDao section
   Stream<List<Task>> watchCompletedTasksCustom() {
@@ -101,3 +154,14 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
         .watch();
   }
 }
+
+@UseDao(tables: [Tags])
+class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
+  final AppDatabase db;
+
+  TagDao(this.db) : super(db);
+
+  Stream<List<Tag>> watchTags() => select(tags).watch();
+  Future insertTag(Insertable<Tag> tag) => into(tags).insert(tag);
+}
+
